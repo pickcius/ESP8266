@@ -1,18 +1,13 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from .models import CommandDevice
-from .models import SensorDevice
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from .mqtt_client import publish_message
+from django.contrib.auth.forms import UserChangeForm
+from django.db import IntegrityError
 from django.http import JsonResponse
-from .models import SensorDevice
+from django.shortcuts import redirect, render, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 
-from django.contrib.auth.models import User
-from django.contrib.auth.forms import UserChangeForm
-from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import render, redirect
 from .models import CommandDevice, SensorDevice
-from django.contrib.auth.decorators import login_required
+from .mqtt_client import publish_message
 
 @login_required
 def device_list(request):
@@ -28,13 +23,24 @@ def add_device(request):
     if request.method == "POST":
         device_type = request.POST.get('type')
         name = request.POST.get('name')
-        topic = request.POST.get('topic')
+        topic = request.POST.get('topic').strip()
 
-        if device_type == 'command':
-            CommandDevice.objects.create(name=name, topic=topic, user=request.user)
-        elif device_type == 'sensor':
-            SensorDevice.objects.create(name=name, topic=topic, user=request.user)
-        
+        if not topic:
+            messages.error(request, 'O tópico MQTT não pode ficar vazio.')
+            return render(request, 'iot_devices/add_device.html')
+
+        try:
+            if device_type == 'command':
+                CommandDevice.objects.create(name=name, topic=topic, user=request.user)
+            elif device_type == 'sensor':
+                SensorDevice.objects.create(name=name, topic=topic, user=request.user)
+            else:
+                messages.error(request, 'Tipo de dispositivo inválido.')
+                return render(request, 'iot_devices/add_device.html')
+        except IntegrityError:
+            messages.error(request, 'Este tópico MQTT já está em uso por outro dispositivo.')
+            return render(request, 'iot_devices/add_device.html')
+
         return redirect('device_list')
     return render(request, 'iot_devices/add_device.html')
 
@@ -63,7 +69,17 @@ def edit_device(request, device_id):
 
     if request.method == "POST":
         device.name = request.POST.get('name')
-        device.topic = request.POST.get('topic')
+        new_topic = request.POST.get('topic', '').strip()
+
+        if not new_topic:
+            messages.error(request, 'O tópico MQTT não pode ficar vazio.')
+            return render(request, 'iot_devices/edit_device.html', {'device': device})
+
+        if SensorDevice.objects.filter(topic=new_topic).exclude(pk=device.pk).exists() or CommandDevice.objects.filter(topic=new_topic).exclude(pk=device.pk).exists():
+            messages.error(request, 'Este tópico MQTT já está em uso por outro dispositivo.')
+            return render(request, 'iot_devices/edit_device.html', {'device': device})
+
+        device.topic = new_topic
         device.save()
         return redirect('device_list')
     return render(request, 'iot_devices/edit_device.html', {'device': device})
