@@ -22,8 +22,8 @@ def device_list(request):
 def add_device(request):
     if request.method == "POST":
         device_type = request.POST.get('type')
-        name = request.POST.get('name')
-        topic = request.POST.get('topic').strip()
+        name = request.POST.get('name', '').strip()
+        topic = request.POST.get('topic', '').strip()
 
         if not topic:
             messages.error(request, 'O tópico MQTT não pode ficar vazio.')
@@ -46,7 +46,7 @@ def add_device(request):
 
 @login_required
 def control_command_device(request, device_id):
-    device = CommandDevice.objects.get(id=device_id)
+    device = get_object_or_404(CommandDevice, id=device_id, user=request.user)
     action = request.GET.get('action')  # 'on' ou 'off'
     if action in ['on', 'off']:
         publish_message(device.topic, action)
@@ -123,7 +123,6 @@ def update_sensor_value(request, sensor_topic):
 #@csrf_exempt ##corrigir atualização via ajax, que não pode estar autenticado.
 def get_sensor_values(request):
     sensors = SensorDevice.objects.filter(user=request.user)
-    print("Fetching sensor values for user:", sensors[0])
     data = [
         {
             'id': sensor.id,
